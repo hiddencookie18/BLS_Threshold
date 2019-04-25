@@ -11,9 +11,9 @@ import sys
 import numpy
 
 def build_poly():
-    secret = random.randint(2, 100)
-    a1 = random.randint(2, 100)
-    a2 = random.randint(2, 100)
+    secret = random.randint(2, 100000)
+    a1 = random.randint(2, 100000)
+    a2 = random.randint(2, 100000)
 
     poly_coeffs = []
     poly_coeffs.append(a2)
@@ -82,14 +82,16 @@ def calculate_master_pubkey(master_secret,prime):
 
 def ThresholdSignature(a,b,c,seckeys,message,prime, L) -> Point3D[Field]:
     HM = getHashG1(message)
+    sigma1 = (multiply(HM, seckeys[a - 1] % prime))
+    sigma2 = (multiply(HM, seckeys[b - 1] % prime))
+    sigma3 = (multiply(HM, seckeys[c - 1] % prime))
 
-    sig1 = (seckeys[a-1] * L[0]) % prime
-    sig2 = (seckeys[b-1] * L[1]) % prime
-    sig3 = (seckeys[c-1] * L[2]) % prime
+    S1 = (multiply(sigma1, L[0] % prime))
+    S2 = (multiply(sigma2, L[1] % prime))
+    S3 = (multiply(sigma3, L[2] % prime))
 
-    sum = (sig1 + sig2 + sig3) % prime
-    agg_signature= multiply(HM,sum)
-    return agg_signature
+    aggregated_signature = add((add(S1, S2)),S3)
+    return (aggregated_signature)
 
 def SingleSignature(privkey, message) -> Point3D[Field]:
         HM = getHashG1(message)
@@ -174,18 +176,18 @@ def Verify(pubkey,aggregated_signature,Hash) -> bool:
     return (result == FQ12.one())
 
 poly = build_poly()
-seckeys = KeyGen(poly,101)
+seckeys = KeyGen(poly,curve_order)
 id1 = random.randint(1, 5)
 id2 = random.randint(1, 5)
 id3 = random.randint(1, 5)
 message = "hello"
 print("IDs: " + str(id1) +" "+ str(id2) +" "+str(id3) )
-L = lagrange_basis(id1,id2,id3,101)
-L_coeffs = calculate_lagrange_coeffs(id1,id2,id3,seckeys,L,101)
+L = lagrange_basis(id1,id2,id3,curve_order)
+L_coeffs = calculate_lagrange_coeffs(id1,id2,id3,seckeys,L,curve_order)
 
-aggregated_signature = ThresholdSignature(id1,id2,id3,seckeys,message,101,L)
+aggregated_signature = ThresholdSignature(id1,id2,id3,seckeys,message,curve_order,L)
 
-pubkey = calculate_master_pubkey(poly[2],101)
+pubkey = calculate_master_pubkey(poly[2],curve_order)
 HM = getHashG1(message)
 
 if Verify(pubkey,aggregated_signature,HM):
