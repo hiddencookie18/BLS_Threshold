@@ -71,7 +71,7 @@ library BLSThreshold {
         G1Point[] memory G1pts = new G1Point[](2);
         G2Point[] memory G2pts = new G2Point[](2);
 
-        G1Point[] memory signatures = new G1Point[](3);
+        G1Point[] memory signatures = new G1Point[](2);
         signatures[0] = sig1;
         signatures[1] = sig2;
 
