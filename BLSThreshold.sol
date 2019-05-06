@@ -151,7 +151,7 @@ library BLSThreshold {
     }
 
     function hashToG1(bytes message) internal returns (G1Point) {
-        uint256 h = uint256(keccak256(message));
+        uint256 h = uint256(sha256(message));
         return multiply(G1(), h);
     }
 
