@@ -1,13 +1,14 @@
 pragma solidity ^0.4.14;
 
 /* 
--Pairing and other elliptic operations are based on the code from "https://gist.github.com/BjornvdLaan/ca6dd4e3993e1ef392f363ec27fe74c4"
+-Pairing operation is based on the code from "https://github.com/Project-Arda/bgls-on-evm" 
+and curve operations are based on the code from "https://gist.github.com/BjornvdLaan/ca6dd4e3993e1ef392f363ec27fe74c4"
 
--Test cases that provide inputs can be generated using BLS_2sign_testcase.py and BLS_2sign_testcase.py
+-Test cases that provide inputs of (signature, pubkey, message) can be generated using BLS_2sign_testcase.py and BLS_3sign_testcase.py
 
 ** Be careful in inputs of type G2Point! 
-*** G2 points in this code are represented in reverse order of BLS_test.py
-** For example; G2 point of [1111,2222,3333,4444] in BLS_test.py is represented as a G2 point like G2Point([2222,1111],[4444,3333] in this code
+*** G2 points in this code are represented in reverse order 
+** For example; G2 point of [1111,2222,3333,4444] in BLS_2sign_testcase.py is represented as a G2 point like G2Point([2222,1111],[4444,3333] in this code
 */
 
 library BLSThreshold {
@@ -68,8 +69,6 @@ library BLSThreshold {
     }
     
     function BLSVerify_2signers(G1Point sig1,G1Point sig2,G2Point pubkey,bytes message) internal returns (bool) {
-        G1Point[] memory G1pts = new G1Point[](2);
-        G2Point[] memory G2pts = new G2Point[](2);
 
         G1Point[] memory signatures = new G1Point[](2);
         signatures[0] = sig1;
@@ -77,20 +76,12 @@ library BLSThreshold {
 
         G1Point memory aggregated_signature = aggregate_signatures(signatures);
         
-        
         G1Point memory hash = hashToG1(message);
-        
-        G1pts[0] = negate(aggregated_signature);
-        G1pts[1]= hash;
-        G2pts[0]=G2();
-        G2pts[1]= pubkey;
-        
-        return pairing(G1pts,G2pts);
+       
+        return pairing(aggregated_signature,G2(),hash,pubkey);
     }
     
     function BLSVerify_3signers(G1Point sig1,G1Point sig2,G1Point sig3,G2Point pubkey,bytes message) internal returns (bool) {
-        G1Point[] memory G1pts = new G1Point[](2);
-        G2Point[] memory G2pts = new G2Point[](2);
 
         G1Point[] memory signatures = new G1Point[](3);
         signatures[0] = sig1;
@@ -99,15 +90,9 @@ library BLSThreshold {
         
         G1Point memory aggregated_signature = aggregate_signatures(signatures);
         
-        
         G1Point memory hash = hashToG1(message);
-        
-        G1pts[0] = negate(aggregated_signature);
-        G1pts[1]= hash;
-        G2pts[0]=G2();
-        G2pts[1]= pubkey;
-        
-        return pairing(G1pts,G2pts);
+   
+        return pairing(aggregated_signature,G2(),hash,pubkey);
     }
 
     function aggregate_signatures(G1Point[] sigs) internal returns (G1Point agg_sig) {
@@ -122,39 +107,57 @@ library BLSThreshold {
         
     }
   
-    function pairing(G1Point[] p1, G2Point[] p2) internal returns (bool) {
-        require(p1.length == p2.length);
-        uint elements = p1.length;
-        uint inputSize = elements * 6;
-        uint[] memory input = new uint[](6);
+   function pairing(G1Point a, G2Point x, G1Point b, G2Point y) internal returns (bool) {
+         uint256 field_modulus = 21888242871839275222246405745257275088696311157297823662689037894645226208583;
 
-        for (uint i = 0; i < elements; i++)
-        {
-            input[0] = p1[i].X;
-            input[1] = p1[i].Y;
-            input[2] = p2[i].X[0];
-            input[3] = p2[i].X[1];
-            input[4] = p2[i].Y[0];
-            input[5] = p2[i].Y[1];
-        }
-
-        uint[1] memory out;
-        bool check;
+    uint256[12] memory input = [a.X, a.Y, x.X[0], x.X[1], x.Y[0], x.Y[1], b.X, field_modulus - b.Y, y.X[0], y.X[1], y.Y[0], y.Y[1]];
+    uint[1] memory result;
+  
+      bool check;
 
         assembly {
-            check := call(sub(gas, 2000), 8, 0, add(input, 0x20), mul(inputSize, 0x20), out, 0x20)
+            check := call(sub(gas, 2000), 8, 0, input,  0x180, result, 0x20)
 
             switch check case 0 {invalid}
         }
         require(check);
-        return out[0] != 0;
-    }
+    
+    return result[0]==1;
+  }
+    
+      function modPow(uint256 base, uint256 exponent, uint256 modulus) internal returns (uint256) {
+    uint256[6] memory input = [32,32,32,base,exponent,modulus];
+    uint256[1] memory result;
+            bool success;
 
-    function hashToG1(bytes message) internal returns (G1Point) {
-        uint256 h = uint256(sha256(message));
-        return multiply(G1(), h);
+    assembly {
+      success :=call(sub(gas, 2000), 5, 0, input, 0xc0, result, 0x20) {
+       
+      }
     }
+    return result[0];
+  }
 
+
+  function hashToG1(bytes message) internal returns (G1Point) {
+           uint256 field_modulus = 21888242871839275222246405745257275088696311157297823662689037894645226208583;
+
+              uint256 hashval = uint256(sha256(message));
+              hashval = hashval % 21888242871839275222246405745257275088696311157297823662689037894645226208583;
+      uint256 hashtest = hashval;
+
+    while (true) {
+      uint256 result = (modPow(hashtest,3,field_modulus) + 3);
+      if (modPow(result, 10944121435919637611123202872628637544348155578648911831344518947322613104291, field_modulus) == 1) {
+        uint256 py = modPow(result, 5472060717959818805561601436314318772174077789324455915672259473661306552146, field_modulus);
+          return G1Point(hashtest,py);
+        
+      } else {
+        hashtest++;
+      }
+    }
+  }
+ 
     function negate(G1Point p) internal returns (G1Point) {
         uint q = 21888242871839275222246405745257275088696311157297823662689037894645226208583;
         if (p.X == 0 && p.Y == 0)
@@ -162,7 +165,7 @@ library BLSThreshold {
         return G1Point(p.X, q - (p.Y % q));
     }
 
-    function add(G1Point p1, G1Point p2) internal returns (G1Point r) {
+      function add(G1Point p1, G1Point p2) internal returns (G1Point r) {
         uint[4] memory input;
         input[0] = p1.X;
         input[1] = p1.Y;
@@ -171,12 +174,10 @@ library BLSThreshold {
         bool success;
         assembly {
             success := call(sub(gas, 2000), 6, 0, input, 0xc0, r, 0x60)
-
             switch success case 0 {invalid}
         }
         require(success);
     }
-   
     function multiply(G1Point p, uint s) internal returns (G1Point r) {
         uint[3] memory input;
         input[0] = p.X;
@@ -185,7 +186,6 @@ library BLSThreshold {
         bool success;
         assembly {
             success := call(sub(gas, 2000), 7, 0, input, 0x80, r, 0x60)
-
             switch success case 0 {invalid}
         }
         require(success);
